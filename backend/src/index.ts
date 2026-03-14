@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import callRouter from "./routes/call";
 import geocodeRouter from "./routes/geocode";
 import twimlRouter from "./routes/twiml";
+import respondRouter from "./routes/respond";
 
 dotenv.config();
 
@@ -12,9 +13,12 @@ const PORT = process.env.PORT || 4000;
 
 app.use(cors({ origin: process.env.FRONTEND_URL || "http://localhost:3000" }));
 app.use(express.json());
+// Twilio posts form-encoded data to /api/respond
+app.use(express.urlencoded({ extended: false }));
 
-// Twilio fetches this when a call connects — must be registered before other routes
+// Twilio webhooks — must be reachable at PUBLIC_URL
 app.use("/api/twiml", twimlRouter);
+app.use("/api/respond", respondRouter);
 
 // Frontend integration points — uncomment route bodies in each file when frontend is ready
 app.use("/api/call", callRouter);

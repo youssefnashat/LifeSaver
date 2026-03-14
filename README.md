@@ -2,108 +2,103 @@
 
 REST API backend for EmergiBridge, a 911 emergency bridge app for non-English speakers.
 
-The backend handles script generation, text-to-speech, and placing the actual outbound call to 911.
-
 ## What it does
 
-1. Accepts an emergency call request from the frontend (type, address, body zones)
-2. Generates a professional 911 script via Groq LLaMA
-3. Converts the script to audio via ElevenLabs
-4. Places an outbound call to 911 via Twilio
-5. Serves a TwiML webhook so Twilio plays the audio when the call connects
+1. Receives an emergency call request from the frontend (type, address, body zones, age)
+2. Stores patient context in Supabase
+3. Places an outbound call via Twilio
+4. When the call connects, Twilio fetches `/api/twiml` which generates and speaks an opening script via Groq + Twilio `<Say>`
+5. `<Gather>` listens for the dispatcher's response, transcribes it, and posts it to `/api/respond`
+6. `/api/respond` feeds the dispatcher's message to Groq and speaks the answer back — this loop continues for the duration of the call
+
+## Call flow
+
+```
+Frontend → POST /api/call
+  → store context in Supabase
+  → Twilio places call → GET /api/twiml?ctx=<id>
+      → Groq generates opening script
+      → <Say> speaks it
+      → <Gather> listens for dispatcher
+          → POST /api/respond?ctx=<id>  (Twilio posts transcript)
+              → Groq generates answer
+              → <Say> speaks it
+              → <Gather> listens again
+              → loop...
+```
 
 ## API Routes
 
-| Method | Route | Description |
-|--------|-------|-------------|
-| POST | `/api/call` | Trigger the full call flow |
-| POST | `/api/geocode` | Reverse geocode GPS coords to a street address |
-| GET | `/api/twiml` | Twilio webhook — returns TwiML to play audio on call connect |
-
-### `POST /api/call`
-
-```json
-{
-  "type": "police" | "fire" | "ems",
-  "address": "312 King Street North, Waterloo",
-  "coords": { "lat": 43.47, "lng": -80.52 },
-  "zones": ["chest", "left_arm"],
-  "age": 45
-}
-```
-
-Response:
-```json
-{ "success": true, "callSid": "CA..." }
-```
-
-### `POST /api/geocode`
-
-```json
-{ "lat": 43.47, "lng": -80.52 }
-```
-
-Response:
-```json
-{ "address": "312 King Street North, Waterloo, ON" }
-```
+| Method | Route | Caller | Description |
+|--------|-------|--------|-------------|
+| POST | `/api/call` | Frontend | Trigger the full call flow |
+| POST | `/api/geocode` | Frontend | Reverse geocode GPS coords to street address |
+| GET | `/api/twiml` | Twilio | Opening script + start of conversation loop |
+| POST | `/api/respond` | Twilio | Each turn of the dispatcher conversation |
 
 ## Tech Stack
 
 | Purpose | Service |
 |---------|---------|
-| Script generation | Groq LLaMA |
-| Text-to-speech | ElevenLabs |
-| Outbound call | Twilio Voice API |
+| Script + responses | Groq LLaMA |
+| Call + TTS + STT | Twilio Voice (`<Say>` + `<Gather>`) |
+| Call context storage | Supabase |
 | Reverse geocoding | Google Maps Geocoding API |
 | Runtime | Node.js + Express + TypeScript |
 
 ## Setup
 
 ```bash
+cd backend
 npm install
 cp .env.example .env
 # fill in API keys
 npm run dev
 ```
 
+For Twilio to reach `/api/twiml` and `/api/respond` locally, expose the backend with ngrok:
+
+```bash
+ngrok http 4000
+# copy the https URL into .env as PUBLIC_URL
+```
+
+## Supabase setup
+
+Run this in the Supabase SQL editor once:
+
+```sql
+CREATE TABLE emergency_calls (
+  id UUID PRIMARY KEY,
+  type TEXT NOT NULL,
+  address TEXT NOT NULL,
+  zones TEXT[],
+  age INTEGER,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+```
+
 ## Environment Variables
 
-```
-PORT=4000
-FRONTEND_URL=http://localhost:3000
-
-TWILIO_ACCOUNT_SID=
-TWILIO_AUTH_TOKEN=
-TWILIO_FROM_NUMBER=+1xxxxxxxxxx
-TWILIO_TO_NUMBER=+1xxxxxxxxxx     # 911 in prod, test number in dev
-
-GROQ_API_KEY=
-ELEVENLABS_API_KEY=
-ELEVENLABS_VOICE_ID=
-GOOGLE_MAPS_API_KEY=
-
-# Must be publicly reachable by Twilio — use ngrok in dev
-PUBLIC_URL=https://your-ngrok-url.ngrok.io
-```
-
-> In development, run `ngrok http 4000` and set `PUBLIC_URL` to your ngrok URL so Twilio can reach the `/api/twiml` webhook.
+See `.env.example` for all required variables.
 
 ## Project Structure
 
 ```
 backend/
 ├── src/
-│   ├── index.ts                   # Express app entry
+│   ├── index.ts
 │   ├── routes/
-│   │   ├── call.ts                # POST /api/call
-│   │   ├── geocode.ts             # POST /api/geocode
-│   │   └── twiml.ts               # GET /api/twiml (Twilio webhook)
-│   └── services/
-│       ├── groqService.ts         # Groq LLaMA script generation
-│       ├── twilioService.ts       # Twilio outbound call
-│       └── elevenLabsService.ts   # ElevenLabs TTS → audio file
-├── tmp/                           # Generated audio files (gitignored)
+│   │   ├── call.ts        # POST /api/call       (frontend → triggers call flow)
+│   │   ├── geocode.ts     # POST /api/geocode    (frontend → reverse geocoding)
+│   │   ├── twiml.ts       # GET  /api/twiml      (Twilio → opening script)
+│   │   └── respond.ts     # POST /api/respond    (Twilio → conversation loop)
+│   ├── services/
+│   │   ├── groqService.ts
+│   │   ├── twilioService.ts
+│   │   └── supabaseService.ts
+│   └── utils/
+│       └── xml.ts         # XML escaping for TwiML safety
 ├── .env.example
 ├── package.json
 └── tsconfig.json

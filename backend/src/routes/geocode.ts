@@ -2,7 +2,7 @@ import { Router, Request, Response } from "express";
 
 // FRONTEND INTEGRATION POINT
 // Called by the frontend with raw GPS coords immediately on page load.
-// Returns a human-readable street address via Google Maps Reverse Geocoding.
+// Returns a human-readable street address via Nominatim (OpenStreetMap) — no API key needed.
 //
 // Expected request body:
 //   { lat: number, lng: number }
@@ -21,17 +21,32 @@ router.post("/", async (req: Request, res: Response) => {
   //   return res.status(400).json({ error: "lat and lng are required numbers" });
   // }
   //
-  // const apiKey = process.env.GOOGLE_MAPS_API_KEY;
-  // const url = `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}`;
+  // const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`;
   //
-  // const response = await fetch(url);
-  // const data = await response.json() as { status: string; results: { formatted_address: string }[] };
+  // const response = await fetch(url, {
+  //   headers: { "User-Agent": "EmergiBridge/1.0" },
+  // });
   //
-  // if (data.status !== "OK" || !data.results[0]) {
+  // const data = await response.json() as {
+  //   address?: {
+  //     house_number?: string;
+  //     road?: string;
+  //     city?: string;
+  //     town?: string;
+  //     state?: string;
+  //   };
+  // };
+  //
+  // if (!data.address) {
   //   return res.status(502).json({ error: "Could not resolve address" });
   // }
   //
-  // return res.json({ address: data.results[0].formatted_address });
+  // const { house_number, road, city, town, state } = data.address;
+  // const address = [house_number, road, city ?? town, state]
+  //   .filter(Boolean)
+  //   .join(", ");
+  //
+  // return res.json({ address });
   // ---
 
   res.status(503).json({ error: "Not yet integrated" });

@@ -1,6 +1,9 @@
 import Groq from "groq-sdk";
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+function getClient() {
+  if (!process.env.GROQ_API_KEY) throw new Error("Missing GROQ_API_KEY");
+  return new Groq({ apiKey: process.env.GROQ_API_KEY });
+}
 
 const ZONE_LABELS: Record<string, string> = {
   head: "head",
@@ -12,55 +15,56 @@ const ZONE_LABELS: Record<string, string> = {
   right_leg: "right leg",
 };
 
-export interface ScriptInput {
+export interface CallContext {
   type: "police" | "fire" | "ems";
   address: string;
   zones?: string[];
   age?: number;
 }
 
-export async function generateScript(input: ScriptInput): Promise<string> {
-  const { type, address, zones, age } = input;
-
-  const serviceLabel = { police: "police", fire: "fire department", ems: "EMS" }[type];
-  const subjectLabel = type === "ems" ? "patient" : "individual";
+function buildPatientSummary(context: CallContext): string {
+  const { type, address, zones, age } = context;
 
   const zoneText =
     zones && zones.length > 0
       ? zones.map((z) => ZONE_LABELS[z] ?? z).join(" and ")
       : null;
 
-  const ageText = age ? `approximately ${age} years old` : null;
-
-  let patientDetails = "";
-  if (type === "ems") {
-    const parts = [
-      ageText ? `The patient is ${ageText}` : "",
-      zoneText ? `and is reporting pain in the ${zoneText}` : "",
-    ].filter(Boolean);
-    patientDetails = parts.join(" ") + ".";
-  }
-
-  const prompt = [
-    `You are generating a 911 emergency script to be spoken by an AI voice to a dispatcher.`,
+  const lines = [
     `Emergency type: ${type}`,
     `Location: ${address}`,
-    patientDetails ? `Patient details: ${patientDetails}` : "",
-    ``,
-    `Write the script following these rules exactly:`,
-    `- Open with: "Hello, I am an AI assistant calling on behalf of a non-English speaking ${subjectLabel}."`,
-    `- State the full address clearly on the next sentence.`,
-    type === "ems" && patientDetails
-      ? `- Include the patient's age and the body zones they reported.`
-      : `- Describe the emergency type clearly.`,
-    `- Close with: "Please send ${serviceLabel} immediately."`,
-    `- Keep the total script under 70 words.`,
-    `- Output only the script — no labels, no explanations, no quotes.`,
+    age ? `Patient age: approximately ${age} years old` : "",
+    zoneText ? `Reported pain in: ${zoneText}` : "",
   ]
     .filter(Boolean)
     .join("\n");
 
-  const completion = await groq.chat.completions.create({
+  return lines;
+}
+
+// Generates the opening 911 script spoken when the call first connects.
+export async function generateOpeningScript(context: CallContext): Promise<string> {
+  const { type } = context;
+  const serviceLabel = { police: "police", fire: "fire department", ems: "EMS" }[type];
+  const subjectLabel = type === "ems" ? "patient" : "individual";
+  const summary = buildPatientSummary(context);
+
+  const prompt = [
+    `Generate a calm, professional opening statement for a 911 call spoken by an AI.`,
+    summary,
+    ``,
+    `Rules:`,
+    `- Start with: "Hello, I am an AI assistant calling on behalf of a non-English speaking ${subjectLabel}."`,
+    `- State the full address clearly.`,
+    type === "ems"
+      ? `- Include the patient's age and the body areas they reported.`
+      : `- Describe the nature of the emergency.`,
+    `- End with: "Please send ${serviceLabel} immediately."`,
+    `- Keep it under 70 words.`,
+    `- Output only the script. No labels, no quotes, no extra text.`,
+  ].join("\n");
+
+  const completion = await getClient().chat.completions.create({
     model: "llama-3.1-8b-instant",
     messages: [{ role: "user", content: prompt }],
     temperature: 0.2,
@@ -68,7 +72,41 @@ export async function generateScript(input: ScriptInput): Promise<string> {
   });
 
   const script = completion.choices[0]?.message?.content?.trim();
-  if (!script) throw new Error("Groq returned an empty response");
-
+  if (!script) throw new Error("Groq returned an empty opening script");
   return script;
+}
+
+// Generates a response to a dispatcher's question during the live call.
+export async function generateResponse(
+  context: CallContext,
+  dispatcherMessage: string
+): Promise<string> {
+  const summary = buildPatientSummary(context);
+
+  const systemPrompt = [
+    `You are an AI assistant speaking on a live 911 call on behalf of a non-English speaking patient.`,
+    `Here is what you know about the patient:`,
+    summary,
+    ``,
+    `Rules:`,
+    `- Answer the dispatcher's question directly and briefly.`,
+    `- Use only the information you have. If you don't know something, say "I don't have that information."`,
+    `- Never break character. Never mention Groq, AI models, or APIs.`,
+    `- Keep responses under 40 words.`,
+    `- Speak calmly and clearly as if on a real emergency call.`,
+  ].join("\n");
+
+  const completion = await getClient().chat.completions.create({
+    model: "llama-3.1-8b-instant",
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: dispatcherMessage },
+    ],
+    temperature: 0.3,
+    max_tokens: 150,
+  });
+
+  const response = completion.choices[0]?.message?.content?.trim();
+  if (!response) throw new Error("Groq returned an empty response");
+  return response;
 }
