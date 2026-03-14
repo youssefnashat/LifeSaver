@@ -21,30 +21,30 @@ import { placeCall } from "../services/twilioService";
 const router = Router();
 
 router.post("/", async (req: Request, res: Response) => {
-  // --- Uncomment when frontend is ready to integrate ---
-  //
-  // const { type, address, zones, age } = req.body;
-  //
-  // if (!type || !address) {
-  //   return res.status(400).json({ error: "type and address are required" });
-  // }
-  //
-  // // 1. Generate a unique ID to link the call context across requests
-  // const contextId = randomUUID();
-  //
-  // // 2. Store patient context in Supabase — looked up by /api/twiml and /api/respond
-  // await storeCallContext(contextId, { type, address, zones, age });
-  //
-  // // 3. Build the TwiML URL — Twilio fetches this when the call connects
-  // const twimlUrl = `${process.env.PUBLIC_URL}/api/twiml?ctx=${contextId}`;
-  //
-  // // 4. Place the outbound call via Twilio
-  // const callSid = await placeCall(twimlUrl);
-  //
-  // return res.json({ success: true, callSid });
-  // ---
+  try {
+    const { type, address, zones, age } = req.body;
 
-  res.status(503).json({ error: "Not yet integrated" });
+    if (!type || !address) {
+      return res.status(400).json({ error: "type and address are required" });
+    }
+
+    // 1. Generate a unique ID to link the call context across requests
+    const contextId = randomUUID();
+
+    // 2. Store patient context in Supabase — looked up by /api/twiml and /api/respond
+    await storeCallContext(contextId, { type, address, zones, age });
+
+    // 3. Build the TwiML URL — Twilio fetches this when the call connects
+    const twimlUrl = `${process.env.PUBLIC_URL}/api/twiml?ctx=${contextId}`;
+
+    // 4. Place the outbound call via Twilio
+    const callSid = await placeCall(twimlUrl);
+
+    return res.json({ success: true, callSid });
+  } catch (err) {
+    console.error("Call error:", err);
+    return res.status(500).json({ error: "Failed to place call" });
+  }
 });
 
 export default router;

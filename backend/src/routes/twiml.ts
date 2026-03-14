@@ -9,8 +9,8 @@ import { escapeXml } from "../utils/xml";
 
 const router = Router();
 
-router.get("/", async (req: Request, res: Response) => {
-  const contextId = req.query.ctx as string | undefined;
+router.all("/", async (req: Request, res: Response) => {
+  const contextId = (req.query.ctx ?? req.body?.ctx) as string | undefined;
 
   res.set("Content-Type", "text/xml");
 
