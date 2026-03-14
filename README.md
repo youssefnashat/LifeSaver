@@ -12,7 +12,7 @@ REST API backend for EmergiBridge, a 911 emergency bridge app for non-English sp
 6. `/api/respond` feeds the dispatcher's message to Groq and speaks the answer back — this loop continues for the duration of the call
 
 ## Call flow
-
+ 
 ```
 Frontend → POST /api/call
   → store context in Supabase
