@@ -1,4 +1,4 @@
-# Lifesave — Backend
+# Lifesaver — Backend
 
 REST API backend for EmergiBridge, a 911 emergency bridge app for non-English speakers.
 
