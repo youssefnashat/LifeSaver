@@ -48,7 +48,14 @@ function GridBg() {
   )
 }
 
-export default function HomeScreen({ onSelect }) {
+const locationBadge = {
+  loading:     { text: 'Getting location...', color: 'text-yellow-400',  border: 'border-yellow-500/30', bg: 'bg-yellow-500/10',  dot: 'bg-yellow-400 animate-pulse' },
+  ready:       { text: 'Location Ready',      color: 'text-emerald-400', border: 'border-emerald-500/30', bg: 'bg-emerald-500/10', dot: 'bg-emerald-400 animate-pulse' },
+  denied:      { text: 'Location Off',        color: 'text-red-400',     border: 'border-red-500/30',    bg: 'bg-red-500/10',    dot: 'bg-red-400' },
+  unavailable: { text: 'No GPS',              color: 'text-white/40',    border: 'border-white/10',      bg: 'bg-white/5',       dot: 'bg-white/30' },
+}
+
+export default function HomeScreen({ onSelect, locationStatus = 'loading', address = '' }) {
   const [visible, setVisible] = useState(false)
 
   useEffect(() => {
@@ -81,10 +88,23 @@ export default function HomeScreen({ onSelect }) {
         className={`relative z-10 mb-8 flex items-center justify-between transition-all duration-500 ${visible ? 'opacity-100' : 'opacity-0'}`}
       >
         {/* GPS badge */}
-        <div className="flex items-center gap-1.5 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5">
-          <div className="h-1.5 w-1.5 animate-pulse rounded-full bg-emerald-400" />
-          <span className="font-outfit text-xs font-medium text-emerald-400">Location On</span>
-        </div>
+        {(() => {
+          const badge = locationBadge[locationStatus] || locationBadge.loading
+          return (
+            <div className={`flex flex-col gap-0.5`}>
+              <div className={`flex items-center gap-1.5 rounded-full border ${badge.border} ${badge.bg} px-3 py-1.5`}>
+                <div className={`h-1.5 w-1.5 rounded-full ${badge.dot}`} />
+                <span className={`font-outfit text-xs font-medium ${badge.color}`}>{badge.text}</span>
+              </div>
+              {locationStatus === 'ready' && address && (
+                <p className="font-outfit text-[10px] text-white/25 px-1 truncate max-w-[180px]">{address}</p>
+              )}
+              {locationStatus === 'denied' && (
+                <p className="font-outfit text-[10px] text-red-400/60 px-1">Enable location for accurate dispatch</p>
+              )}
+            </div>
+          )
+        })()}
 
         {/* SOS pill */}
         <div className="flex items-center gap-1.5 rounded-full border border-white/10 bg-white/5 px-3 py-1.5">

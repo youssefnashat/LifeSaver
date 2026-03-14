@@ -3,7 +3,7 @@ export const emergencyConfig = {
     label: 'Police',
     emoji: '🚔',
     color: '#3b82f6',
-    callNumber: '110',
+    callNumber: '911',
     dispatchPrefix: 'POLICE DISPATCH',
     questions: [
       {
@@ -32,7 +32,7 @@ export const emergencyConfig = {
     label: 'Medical',
     emoji: '🏥',
     color: '#ef4444',
-    callNumber: '112',
+    callNumber: '911',
     dispatchPrefix: 'MEDICAL DISPATCH',
     questions: [
       {
@@ -61,7 +61,7 @@ export const emergencyConfig = {
     label: 'Fire',
     emoji: '🚒',
     color: '#f97316',
-    callNumber: '112',
+    callNumber: '911',
     dispatchPrefix: 'FIRE DISPATCH',
     questions: [
       {

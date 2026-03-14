@@ -2,9 +2,14 @@ import { useState, useEffect } from 'react'
 import { Ripple } from './ui/ripple'
 import { emergencyConfig, generateDispatchPhrase } from '../emergencyQuizLogic'
 
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:4000'
+
+// Map frontend emergency types to backend types
+const TYPE_MAP = { police: 'police', medical: 'ems', fire: 'fire' }
+
 const statusSteps = ['Connecting...', 'Reaching dispatch...', 'Line secured', 'Connected']
 
-export default function CallingScreen({ type, answers, onConfirm, onBack }) {
+export default function CallingScreen({ type, answers, address, coords, onConfirm, onBack }) {
   const config = emergencyConfig[type]
   const phrase = generateDispatchPhrase(type, answers)
 
@@ -12,6 +17,7 @@ export default function CallingScreen({ type, answers, onConfirm, onBack }) {
   const [showPhrase, setShowPhrase] = useState(false)
   const [visible, setVisible] = useState(false)
   const [callDuration, setCallDuration] = useState(0)
+  const [callStatus, setCallStatus] = useState('pending') // 'pending' | 'success' | 'error'
 
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 50)
@@ -40,6 +46,28 @@ export default function CallingScreen({ type, answers, onConfirm, onBack }) {
     const timer = setInterval(() => setCallDuration((d) => d + 1), 1000)
     return () => clearInterval(timer)
   }, [])
+
+  // Place the actual 911 call as soon as CallingScreen mounts
+  useEffect(() => {
+    const resolvedAddress = address ||
+      (coords ? `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}` : 'Unknown location')
+
+    fetch(`${BACKEND_URL}/api/call`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: TYPE_MAP[type] || type,
+        address: resolvedAddress,
+        situation: phrase, // human-readable context for Groq
+      }),
+    })
+      .then((res) => {
+        if (!res.ok) throw new Error('Call failed')
+        return res.json()
+      })
+      .then(() => setCallStatus('success'))
+      .catch(() => setCallStatus('error'))
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const formatDuration = (s) => {
     const m = Math.floor(s / 60)
@@ -142,6 +170,14 @@ export default function CallingScreen({ type, answers, onConfirm, onBack }) {
           </span>
         </div>
 
+        {/* Address being dispatched */}
+        {address && (
+          <div className={`mb-4 flex items-center gap-2 transition-all duration-500 ${visible ? 'opacity-100' : 'opacity-0'}`}>
+            <span className="text-xs">📍</span>
+            <span className="font-outfit text-xs text-white/40 truncate">{address}</span>
+          </div>
+        )}
+
         {/* Dispatch phrase */}
         <div
           className={`w-full rounded-2xl border p-4 transition-all duration-700 ${
@@ -166,19 +202,30 @@ export default function CallingScreen({ type, answers, onConfirm, onBack }) {
           <p className="font-outfit text-sm leading-relaxed text-white/80">{phrase}</p>
         </div>
 
-        {/* Confirm button */}
-        <button
-          onClick={onConfirm}
-          className={`mt-6 w-full rounded-2xl py-4 font-syne text-base font-bold tracking-wide text-white transition-all duration-700 ${
-            showPhrase ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
-          }`}
-          style={{
-            background: `linear-gradient(135deg, ${config.color} 0%, ${config.color}cc 100%)`,
-            boxShadow: `0 8px 32px ${config.color}40`,
-          }}
-        >
-          Help Is Coming →
-        </button>
+        {/* Confirm button or error */}
+        {callStatus === 'error' ? (
+          <div
+            className={`mt-6 w-full rounded-2xl border border-red-500/30 bg-red-500/10 py-4 text-center transition-all duration-700 ${
+              showPhrase ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+            }`}
+          >
+            <p className="font-outfit text-sm text-red-400">Call failed. Please dial 911 directly.</p>
+          </div>
+        ) : (
+          <button
+            onClick={onConfirm}
+            disabled={callStatus !== 'success'}
+            className={`mt-6 w-full rounded-2xl py-4 font-syne text-base font-bold tracking-wide text-white transition-all duration-700 ${
+              showPhrase ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'
+            } ${callStatus !== 'success' ? 'opacity-50 cursor-not-allowed' : ''}`}
+            style={{
+              background: `linear-gradient(135deg, ${config.color} 0%, ${config.color}cc 100%)`,
+              boxShadow: `0 8px 32px ${config.color}40`,
+            }}
+          >
+            {callStatus === 'pending' ? 'Placing call...' : 'Help Is Coming →'}
+          </button>
+        )}
 
         <p className="font-outfit mt-4 text-center text-xs text-white/25">
           Stay on the line. Do not hang up.

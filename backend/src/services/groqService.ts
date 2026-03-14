@@ -5,64 +5,36 @@ function getClient() {
   return new Groq({ apiKey: process.env.GROQ_API_KEY });
 }
 
-const ZONE_LABELS: Record<string, string> = {
-  head: "head",
-  chest: "chest",
-  abdomen: "abdomen",
-  left_arm: "left arm",
-  right_arm: "right arm",
-  left_leg: "left leg",
-  right_leg: "right leg",
-};
-
 export interface CallContext {
   type: "police" | "fire" | "ems";
   address: string;
+  situation?: string; // plain-language description from frontend (e.g. "Chest pain, not breathing")
   zones?: string[];
   age?: number;
 }
 
-function buildPatientSummary(context: CallContext): string {
-  const { type, address, zones, age } = context;
-
-  const zoneText =
-    zones && zones.length > 0
-      ? zones.map((z) => ZONE_LABELS[z] ?? z).join(" and ")
-      : null;
-
-  const lines = [
-    `Emergency type: ${type}`,
-    `Location: ${address}`,
-    age ? `Patient age: approximately ${age} years old` : "",
-    zoneText ? `Reported pain in: ${zoneText}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-
-  return lines;
-}
-
 // Generates the opening 911 script spoken when the call first connects.
 export async function generateOpeningScript(context: CallContext): Promise<string> {
-  const { type } = context;
+  const { type, address, situation } = context;
   const serviceLabel = { police: "police", fire: "fire department", ems: "EMS" }[type];
   const subjectLabel = type === "ems" ? "patient" : "individual";
-  const summary = buildPatientSummary(context);
 
   const prompt = [
-    `Generate a calm, professional opening statement for a 911 call spoken by an AI.`,
-    summary,
+    `Generate a calm, professional opening statement for a 911 call spoken by an AI assistant.`,
+    `Emergency type: ${type}`,
+    `Location: ${address}`,
+    situation ? `Situation: ${situation}` : "",
     ``,
     `Rules:`,
     `- Start with: "Hello, I am an AI assistant calling on behalf of a non-English speaking ${subjectLabel}."`,
     `- State the full address clearly.`,
-    type === "ems"
-      ? `- Include the patient's age and the body areas they reported.`
-      : `- Describe the nature of the emergency.`,
+    `- Briefly describe the emergency situation.`,
     `- End with: "Please send ${serviceLabel} immediately."`,
     `- Keep it under 70 words.`,
     `- Output only the script. No labels, no quotes, no extra text.`,
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 
   const completion = await getClient().chat.completions.create({
     model: "llama-3.1-8b-instant",
@@ -81,19 +53,28 @@ export async function generateResponse(
   context: CallContext,
   dispatcherMessage: string
 ): Promise<string> {
-  const summary = buildPatientSummary(context);
+  const { type, address, situation } = context;
+
+  // Build an explicit list of what IS known so the model can't invent facts
+  const knownFacts = [
+    `- Location: ${address}`,
+    `- Emergency type: ${type}`,
+    situation ? `- Situation: ${situation}` : "",
+  ].filter(Boolean).join("\n");
 
   const systemPrompt = [
-    `You are an AI assistant speaking on a live 911 call on behalf of a non-English speaking patient.`,
-    `Here is what you know about the patient:`,
-    summary,
+    `You are an AI assistant speaking on a live 911 call on behalf of a non-English speaking person.`,
     ``,
-    `Rules:`,
-    `- Answer the dispatcher's question directly and briefly.`,
-    `- Use only the information you have. If you don't know something, say "I don't have that information."`,
-    `- Never break character. Never mention Groq, AI models, or APIs.`,
-    `- Keep responses under 40 words.`,
-    `- Speak calmly and clearly as if on a real emergency call.`,
+    `THE ONLY INFORMATION YOU HAVE IS:`,
+    knownFacts,
+    ``,
+    `CRITICAL RULES — follow these exactly:`,
+    `- If the dispatcher asks for ANYTHING not listed above (name, age, gender, medical history, allergies, insurance, citizenship, etc.), respond with exactly: "I don't have that information."`,
+    `- Do NOT guess, infer, or assume any details not explicitly listed above.`,
+    `- Do NOT make up a name, age, or gender under any circumstances.`,
+    `- Answer only what you know. Keep responses under 30 words.`,
+    `- Never mention, Groq, or technology. Speak as if relaying information from the patient.`,
+    `- Be calm and direct.`,
   ].join("\n");
 
   const completion = await getClient().chat.completions.create({
